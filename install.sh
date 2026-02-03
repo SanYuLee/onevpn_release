@@ -21,10 +21,22 @@ err()  { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # 检测下载工具
 if command -v curl &>/dev/null; then
-  fetch() { curl -sSLf "$1" -o "$2"; }
+  fetch() {
+    if ! curl -sSLf "$1" -o "$2"; then
+      local code=$?
+      err "下载失败 (curl 退出码 $code)"
+      [[ $code -eq 23 ]] && err "常见原因：磁盘已满或目标目录无写权限。请检查: df -h $INSTALL_DIR && touch $INSTALL_DIR/.write_test && rm -f $INSTALL_DIR/.write_test"
+      return 1
+    fi
+  }
   fetch_stdout() { curl -sSLf "$1"; }
 elif command -v wget &>/dev/null; then
-  fetch() { wget -q -O "$2" "$1"; }
+  fetch() {
+    if ! wget -q -O "$2" "$1"; then
+      err "下载失败。若为写入错误，请检查磁盘空间: df -h $INSTALL_DIR"
+      return 1
+    fi
+  }
   fetch_stdout() { wget -q -O - "$1"; }
 else
   err "需要 curl 或 wget，请先安装。"
@@ -73,6 +85,20 @@ fi
 
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
+
+# 安装前检查：目标可写且磁盘空间充足（约 50MB）
+if ! touch "$INSTALL_DIR/.write_test" 2>/dev/null; then
+  err "无法写入 $INSTALL_DIR，请检查权限或换一个安装目录。"
+  exit 1
+fi
+rm -f "$INSTALL_DIR/.write_test"
+if command -v df &>/dev/null; then
+  avail=$(df -k "$INSTALL_DIR" 2>/dev/null | awk 'NR==2 {print $4}')
+  if [[ -n "$avail" && "$avail" -lt 51200 ]]; then
+    err "磁盘空间不足（需要约 50MB），当前可用约 $((avail/1024))MB。请清理后重试。"
+    exit 1
+  fi
+fi
 
 BASE="$REPO_RAW/$VERSION"
 if [[ "$MODE" == "server" ]]; then

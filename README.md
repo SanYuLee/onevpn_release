@@ -45,3 +45,11 @@ curl -sSL https://raw.githubusercontent.com/SanYuLee/onevpn_release/main/install
 - 安装服务端但不安装 systemd 单元：`SKIP_SYSTEMD=1 curl -sSL ... | sudo bash -s server`
 
 安装完成后按脚本提示编辑配置并启动即可。
+
+### 安装失败：curl (23) Failure writing output to destination
+
+表示无法写入安装目录，常见原因：
+
+1. **磁盘已满**：执行 `df -h /opt/onevpn`（或你的安装目录）查看剩余空间，至少需约 50MB。
+2. **目录无写权限**：服务端默认安装到 `/opt/onevpn`，需用 `sudo` 运行；或指定有写权限的目录，例如 `sudo bash -s server /root/onevpn`。
+3. **只读文件系统**：部分容器或只读根分区下 `/opt` 不可写，可改用可写目录：`sudo bash -s server /tmp/onevpn`，再自行将文件移到目标位置。
