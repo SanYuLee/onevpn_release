@@ -12,10 +12,12 @@
 irm https://raw.githubusercontent.com/SanYuLee/onevpn_release/main/install.ps1 | iex
 ```
 
-脚本会把最新版客户端（`one_client.exe`、`client.yaml` 等）下载到 `%USERPROFILE%\onevpn-client`。然后：
+脚本会把最新版客户端（`one_client.exe`、`client.yaml` 等）下载到 `%USERPROFILE%\onevpn-client`，并创建桌面快捷方式。然后：
 
 1. 编辑该目录下的 `client.yaml`，填写 **server**（服务器地址）和 **password**（与服务端一致）。
-2. 右键 `one_client.exe` → **以管理员身份运行**。
+2. 双击桌面上的 **OneVPN 客户端** 快捷方式，或以管理员身份运行 `one_client.exe`。
+
+**退出后再次启动**：双击桌面快捷方式「OneVPN 客户端」，或进入安装目录（如 `%USERPROFILE%\onevpn-client`）右键 `one_client.exe` → **以管理员身份运行**。程序会常驻系统托盘，右键托盘图标可「显示 Web 界面」或「退出」。
 
 若需指定安装目录或版本号，可先下载脚本再带参数执行：
 
@@ -43,6 +45,7 @@ curl -sSL https://raw.githubusercontent.com/SanYuLee/onevpn_release/main/install
 - 指定安装目录：`sudo bash -s server /opt/onevpn` 或 `bash -s client ~/my-client`
 - 指定版本号：`sudo bash -s server /opt/onevpn 1.0.1`
 - 安装服务端但不安装 systemd 单元：`SKIP_SYSTEMD=1 curl -sSL ... | sudo bash -s server`
+- **配置文件**：若安装目录下已存在 `server.yaml` 或 `client.yaml`，脚本会询问「是否覆盖？」默认不覆盖（直接回车保留现有配置）。非交互安装时默认跳过配置文件；需强制覆盖可设置 `OVERWRITE_CONFIG=1`。
 
 安装完成后按脚本提示编辑配置并启动即可。
 

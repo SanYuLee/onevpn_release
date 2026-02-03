@@ -110,7 +110,28 @@ fi
 BASE="$REPO_RAW/$VERSION"
 if [[ "$MODE" == "server" ]]; then
   info "正在安装 OneVPN 服务端 $VERSION 到 $INSTALL_DIR ..."
+  # 配置文件：不存在则下载（首次安装）；已存在则可交互时询问、不可交互时默认不覆盖
+  SKIP_SERVER_YAML=0
+  if [[ -f "$INSTALL_DIR/server.yaml" ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "目录下已存在 server.yaml，是否覆盖？(y/N) " r
+      [[ "${r,,}" == "y" || "${r,,}" == "yes" ]] || SKIP_SERVER_YAML=1
+    else
+      if [[ "${OVERWRITE_CONFIG:-0}" == "1" ]]; then
+        SKIP_SERVER_YAML=0
+      else
+        info "已存在 server.yaml，跳过下载（保留现有配置）。若需覆盖可先删除或设置 OVERWRITE_CONFIG=1 后重试"
+        SKIP_SERVER_YAML=1
+      fi
+    fi
+  else
+    info "未检测到 server.yaml，将下载默认配置"
+  fi
   for f in one_server server.yaml VERSION README.md; do
+    if [[ "$f" == "server.yaml" && $SKIP_SERVER_YAML -eq 1 ]]; then
+      info "  跳过 $f（保留现有配置）"
+      continue
+    fi
     info "  下载 $f"
     fetch "$BASE/server/$f" "$f" || { err "下载 $f 失败"; exit 1; }
   done
@@ -151,7 +172,28 @@ EOF
   echo ""
 else
   info "正在安装 OneVPN 客户端 $VERSION 到 $INSTALL_DIR ..."
+  # 配置文件：不存在则下载（首次安装）；已存在则可交互时询问、不可交互时默认不覆盖
+  SKIP_CLIENT_YAML=0
+  if [[ -f "$INSTALL_DIR/client.yaml" ]]; then
+    if [[ -t 0 ]]; then
+      read -r -p "目录下已存在 client.yaml，是否覆盖？(y/N) " r
+      [[ "${r,,}" == "y" || "${r,,}" == "yes" ]] || SKIP_CLIENT_YAML=1
+    else
+      if [[ "${OVERWRITE_CONFIG:-0}" == "1" ]]; then
+        SKIP_CLIENT_YAML=0
+      else
+        info "已存在 client.yaml，跳过下载（保留现有配置）。若需覆盖可先删除或设置 OVERWRITE_CONFIG=1 后重试"
+        SKIP_CLIENT_YAML=1
+      fi
+    fi
+  else
+    info "未检测到 client.yaml，将下载默认配置"
+  fi
   for f in one_client.exe client.yaml VERSION README.md; do
+    if [[ "$f" == "client.yaml" && $SKIP_CLIENT_YAML -eq 1 ]]; then
+      info "  跳过 $f（保留现有配置）"
+      continue
+    fi
     info "  下载 $f"
     fetch "$BASE/client/$f" "$f" || { err "下载 $f 失败"; exit 1; }
   done

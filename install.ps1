@@ -34,8 +34,28 @@ $Files = @("one_client.exe", "client.yaml", "VERSION", "README.md")
 if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null }
 Set-Location $InstallDir
 
+# 配置文件：不存在则下载（首次安装）；已存在则可交互时询问、不可交互时默认不覆盖
+$SkipClientYaml = $false
+if (Test-Path "client.yaml") {
+    if ($env:OVERWRITE_CONFIG -eq "1") {
+        $SkipClientYaml = $false
+    } elseif (-not [Environment]::UserInteractive) {
+        Write-Info "已存在 client.yaml，跳过下载（保留现有配置）。若需覆盖可设置 OVERWRITE_CONFIG=1 后重试"
+        $SkipClientYaml = $true
+    } else {
+        $r = Read-Host "目录下已存在 client.yaml，是否覆盖？(y/N)"
+        if ($r -notmatch '^[yY]') { $SkipClientYaml = $true }
+    }
+} else {
+    Write-Info "未检测到 client.yaml，将下载默认配置"
+}
+
 Write-Info "正在安装 OneVPN 客户端 $Version 到 $InstallDir ..."
 foreach ($f in $Files) {
+    if ($f -eq "client.yaml" -and $SkipClientYaml) {
+        Write-Info "  跳过 client.yaml（保留现有配置）"
+        continue
+    }
     Write-Info "  下载 $f"
     try {
         Invoke-WebRequest -Uri "$Base/$f" -OutFile $f -UseBasicParsing
@@ -46,6 +66,25 @@ foreach ($f in $Files) {
 }
 
 Write-Info "客户端文件已安装到: $InstallDir"
+
+# 创建桌面快捷方式，便于退出后再次启动
+$DesktopPath = [Environment]::GetFolderPath("Desktop")
+$ShortcutPath = Join-Path $DesktopPath "OneVPN 客户端.lnk"
+try {
+    $WshShell = New-Object -ComObject WScript.Shell
+    $Shortcut = $WshShell.CreateShortcut($ShortcutPath)
+    $Shortcut.TargetPath = $ExePath
+    $Shortcut.WorkingDirectory = $InstallDir
+    $Shortcut.Description = "OneVPN 客户端 - 双击启动，右键托盘图标可显示 Web 界面或退出"
+    $Shortcut.Save()
+    # 设置为“以管理员身份运行”（通过修改快捷方式参数）
+    $bytes = [System.IO.File]::ReadAllBytes($ShortcutPath)
+    $bytes[0x15] = $bytes[0x15] -bor 0x20  # Set byte 21 (0x15) bit 6 (0x20) to enable RunAsAdmin
+    [System.IO.File]::WriteAllBytes($ShortcutPath, $bytes)
+    Write-Info "已创建桌面快捷方式: OneVPN 客户端"
+} catch {
+    Write-Host "未创建桌面快捷方式（可手动到安装目录运行 one_client.exe）" -ForegroundColor Yellow
+}
 Write-Host ""
 
 $ExePath = Join-Path $InstallDir "one_client.exe"
