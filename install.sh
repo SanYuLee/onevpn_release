@@ -104,13 +104,17 @@ WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
     info "已安装 systemd 单元: $SYSTEMD_UNIT"
+    # 安装后自动启动服务
+    if systemctl start onevpn-server 2>/dev/null; then
+      info "已自动启动 onevpn-server"
+    fi
   fi
 
   echo ""
   echo "下一步："
-  echo "  1. 编辑配置: $INSTALL_DIR/server.yaml （至少设置 addr / password / tun_ip）"
-  echo "  2. 启动:    sudo $INSTALL_DIR/one_server"
-  [[ -z "${SKIP_SYSTEMD:-}" ]] && echo "     或: sudo systemctl start onevpn-server   # 开机自启: sudo systemctl enable onevpn-server"
+  echo "  - 服务已启动，提供 Web 管理界面（若已配置 web_listen / web_admin_pass）。"
+  echo "  - 若未配置 VPN 参数（addr / password / tun_ip / out_iface），VPN 服务不会自动启动；可在 Web 页面完成配置后点击「启动 VPN 服务」。"
+  echo "  - 管理: sudo systemctl start|stop|restart onevpn-server   # 开机自启: sudo systemctl enable onevpn-server"
   echo ""
 else
   info "正在安装 OneVPN 客户端 $VERSION 到 $INSTALL_DIR ..."
