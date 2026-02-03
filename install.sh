@@ -86,6 +86,13 @@ fi
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
+# 服务端：安装前先停止旧服务，避免占用二进制导致无法覆盖
+if [[ "$MODE" == "server" ]] && command -v systemctl &>/dev/null; then
+  if systemctl stop onevpn-server 2>/dev/null; then
+    info "已停止运行中的 onevpn-server 服务"
+  fi
+fi
+
 # 安装前检查：目标可写且磁盘空间充足（约 50MB）
 if ! touch "$INSTALL_DIR/.write_test" 2>/dev/null; then
   err "无法写入 $INSTALL_DIR，请检查权限或换一个安装目录。"
