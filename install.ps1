@@ -235,19 +235,61 @@ if ($needTapDriver) {
     } else {
         try {
             Write-Warn "此过程可能需要 10-30 秒，请稍候..."
-            $process = Start-Process -FilePath "pnputil.exe" -ArgumentList "/add-driver", "`"$infFile`"", "/install", "/noreboot" -Wait -PassThru -WindowStyle Hidden
 
-            if ($process.ExitCode -eq 0) {
+            # 尝试安装驱动（先尝试正常安装，失败则尝试强制安装）
+            $exitCode = 0
+            try {
+                $process = Start-Process -FilePath "pnputil.exe" -ArgumentList "/add-driver", "`"$infFile`"", "/install", "/noreboot" -Wait -PassThru -WindowStyle Hidden
+                $exitCode = $process.ExitCode
+            } catch {
+                $exitCode = -1
+            }
+
+            # 如果安装失败，尝试强制安装
+            if ($exitCode -ne 0 -and $exitCode -ne 3010) {
+                Write-Info "尝试强制安装驱动..."
+                try {
+                    $process = Start-Process -FilePath "pnputil.exe" -ArgumentList "/add-driver", "`"$infFile`"", "/install", "/noreboot", "/force" -Wait -PassThru -WindowStyle Hidden
+                    $exitCode = $process.ExitCode
+                } catch {
+                    $exitCode = -1
+                }
+            }
+
+            # 检查安装结果
+            if ($exitCode -eq 0) {
                 Write-Info "TAP 驱动安装成功！"
                 $driverInstalled = $true
-            } elseif ($process.ExitCode -eq 3010) {
+            } elseif ($exitCode -eq 3010) {
                 Write-Info "TAP 驱动安装成功，但需要重启计算机才能生效"
                 Write-Warn "请重启计算机后再次运行 OneVPN 客户端"
                 $driverInstalled = $true
-            } else {
-                Write-Warn "TAP 驱动安装失败，退出码: $($process.ExitCode)"
+            } elseif ($exitCode -eq -1797) {
+                # 错误码 -1797 (0xFFFFF909) 表示驱动未签名
+                Write-Warn "驱动未签名或系统禁止安装未签名驱动"
                 Write-Host "已下载客户端和驱动文件，但驱动安装失败，请手动安装" -ForegroundColor Yellow
                 Write-Host "驱动文件位置: $infFile" -ForegroundColor Cyan
+                Write-Host "提示：可以尝试以下方法安装：" -ForegroundColor Cyan
+                Write-Host "  1. 临时禁用驱动签名强制：bcdedit /set testsigning on（需要重启）" -ForegroundColor Cyan
+                Write-Host "  2. 右键 OemVista.inf → 安装" -ForegroundColor Cyan
+            } elseif ($exitCode -eq -1073700886) {
+                # 错误码 -1073700886 (0xC000007A) 表示系统资源不足
+                Write-Warn "系统资源不足，无法安装驱动"
+                Write-Host "已下载客户端和驱动文件，但驱动安装失败，请手动安装" -ForegroundColor Yellow
+                Write-Host "驱动文件位置: $infFile" -ForegroundColor Cyan
+            } else {
+                # 其他错误，可能是驱动已安装
+                $checkExisting = & pnputil /enum-drivers | Select-String -Pattern "tap0901" -Quiet
+                if ($checkExisting) {
+                    Write-Info "TAP 驱动已存在于系统中"
+                    $driverInstalled = $true
+                } else {
+                    Write-Warn "TAP 驱动安装失败，退出码: $exitCode"
+                    Write-Host "已下载客户端和驱动文件，但驱动安装失败，请手动安装" -ForegroundColor Yellow
+                    Write-Host "驱动文件位置: $infFile" -ForegroundColor Cyan
+                    Write-Host "尝试手动安装命令：" -ForegroundColor Cyan
+                    Write-Host "  pnputil /add-driver `"$infFile`" /install" -ForegroundColor White
+                }
             }
 
             # 等待驱动加载
