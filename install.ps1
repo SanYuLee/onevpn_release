@@ -33,8 +33,23 @@ function Write-Warn { param($m) Write-Host "[WARN] $m" -ForegroundColor Yellow }
 
 # 检测 TAP 驱动是否已安装
 function Test-TAPDriver {
-    $adapter = Get-NetAdapter | Where-Object { $_.Name -like "*TAP*" -or $_.InterfaceDescription -like "*TAP*" }
-    return ($null -ne $adapter)
+    # 方法1：检查驱动存储中是否存在 TAP 驱动
+    try {
+        $driverPackages = pnputil /enum-drivers | Out-String
+        if ($driverPackages -match "tap0901" -or $driverPackages -match "TAP-Windows") {
+            return $true
+        }
+    } catch {}
+
+    # 方法2：检查网络适配器
+    try {
+        $adapter = Get-NetAdapter | Where-Object { $_.Name -like "*TAP*" -or $_.InterfaceDescription -like "*TAP*" }
+        if ($null -ne $adapter) {
+            return $true
+        }
+    } catch {}
+
+    return $false
 }
 
 # 获取系统架构（32位或64位）
@@ -277,10 +292,32 @@ if ($needTapDriver) {
                 Write-Warn "系统资源不足，无法安装驱动"
                 Write-Host "已下载客户端和驱动文件，但驱动安装失败，请手动安装" -ForegroundColor Yellow
                 Write-Host "驱动文件位置: $infFile" -ForegroundColor Cyan
+            } elseif ($exitCode -eq 1) {
+                # 退出码1通常表示驱动已存在或需要重启，检查驱动是否真的已安装
+                if (Test-TAPDriver) {
+                    Write-Info "TAP 驱动已安装"
+                    $driverInstalled = $true
+                } else {
+                    # 驱动可能已添加到驱动存储但未安装，尝试安装
+                    Write-Info "驱动已添加到驱动存储，尝试安装..."
+                    try {
+                        $process = Start-Process -FilePath "pnputil.exe" -ArgumentList "/add-driver", "`"$infFile`"", "/install", "/force" -Wait -PassThru -WindowStyle Hidden
+                        if (Test-TAPDriver) {
+                            Write-Info "TAP 驱动安装成功"
+                            $driverInstalled = $true
+                        } else {
+                            Write-Warn "TAP 驱动可能需要重启后才能生效"
+                            $driverInstalled = $true  # 认为安装成功
+                        }
+                    } catch {
+                        Write-Warn "TAP 驱动安装失败"
+                        Write-Host "已下载客户端和驱动文件，但驱动安装失败，请手动安装" -ForegroundColor Yellow
+                        Write-Host "驱动文件位置: $infFile" -ForegroundColor Cyan
+                    }
+                }
             } else {
-                # 其他错误，可能是驱动已安装
-                $checkExisting = & pnputil /enum-drivers | Select-String -Pattern "tap0901" -Quiet
-                if ($checkExisting) {
+                # 其他错误
+                if (Test-TAPDriver) {
                     Write-Info "TAP 驱动已存在于系统中"
                     $driverInstalled = $true
                 } else {
