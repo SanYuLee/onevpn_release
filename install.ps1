@@ -14,9 +14,111 @@ $RepoRaw = "https://raw.githubusercontent.com/SanYuLee/onevpn_release/main"
 
 function Write-Info { param($m) Write-Host "[INFO] $m" -ForegroundColor Green }
 function Write-Err  { param($m) Write-Host "[ERROR] $m" -ForegroundColor Red }
+function Write-Warn { param($m) Write-Host "[WARN] $m" -ForegroundColor Yellow }
 
 # 使用 TLS 1.2
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# 检测 TAP 驱动是否已安装
+function Test-TAPDriver {
+    $adapter = Get-NetAdapter | Where-Object { $_.Name -like "*TAP*" -or $_.InterfaceDescription -like "*TAP*" }
+    return ($null -ne $adapter)
+}
+
+# 获取系统架构（32位或64位）
+function Get-SystemArchitecture {
+    if ([Environment]::Is64BitOperatingSystem) {
+        return "x64"
+    } else {
+        return "x86"
+    }
+}
+
+# 静默安装 TAP-Windows 驱动
+function Install-TAPDriver {
+    Write-Info "检测到 TAP 驱动未安装，正在自动下载并安装..."
+
+    # 检测系统架构
+    $arch = Get-SystemArchitecture
+    Write-Info "检测到系统架构: $arch"
+
+    # 根据架构选择对应的 TAP 驱动
+    if ($arch -eq "x64") {
+        $tapUrl = "https://build.openvpn.net/downloads/releases/latest-tap-windows-x64.exe"
+        $tapFileName = "tap-windows-x64.exe"
+    } else {
+        $tapUrl = "https://build.openvpn.net/downloads/releases/latest-tap-windows-x86.exe"
+        $tapFileName = "tap-windows-x86.exe"
+    }
+
+    $tempDir = Join-Path $env:TEMP "onevpn-tap"
+    if (-not (Test-Path $tempDir)) {
+        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+    }
+    $tapInstaller = Join-Path $tempDir $tapFileName
+
+    try {
+        Write-Info "正在下载 TAP-Windows 驱动..."
+        Invoke-WebRequest -Uri $tapUrl -OutFile $tapInstaller -UseBasicParsing
+        Write-Info "驱动下载完成，正在静默安装..."
+        Write-Warn "此过程可能需要 10-30 秒，请稍候..."
+
+        # 静默安装（使用 /S 参数）
+        $process = Start-Process -FilePath $tapInstaller -ArgumentList "/S", "/D=$InstallDir\driver" -Wait -PassThru
+
+        if ($process.ExitCode -eq 0) {
+            Write-Info "TAP 驱动安装成功！"
+        } else {
+            Write-Warn "TAP 驱动安装退出码: $($process.ExitCode)"
+        }
+
+        # 清理安装包
+        Remove-Item $tapInstaller -Force -ErrorAction SilentlyContinue
+
+        # 等待驱动加载
+        Start-Sleep -Seconds 3
+
+        # 再次检测
+        if (Test-TAPDriver) {
+            Write-Info "TAP 驱动检测成功！"
+        } else {
+            Write-Warn "TAP 驱动可能未正确安装，建议重启计算机"
+        }
+
+    } catch {
+        Write-Warn "TAP 驱动自动安装失败: $_"
+        Write-Host "请手动安装 TAP-Windows 驱动或重启计算机后再试" -ForegroundColor Yellow
+        Write-Host "下载地址: $tapUrl" -ForegroundColor Cyan
+    }
+}
+
+# 检测并安装 TAP 驱动
+Write-Host ""
+if (-not (Test-TAPDriver)) {
+    Write-Warn "未检测到 TAP-Windows 驱动"
+
+    # 检查是否为自动安装模式（通过环境变量）
+    $autoInstall = $false
+    if ($env:AutoInstallTap -eq "1") {
+        $autoInstall = $true
+    } elseif ([Environment]::UserInteractive) {
+        # 交互模式下询问用户
+        $response = Read-Host "是否自动下载并安装 TAP 驱动？(Y/n)"
+        if ($response -eq "" -or $response -match '^[yY]') {
+            $autoInstall = $true
+        }
+    }
+
+    if ($autoInstall) {
+        Install-TAPDriver
+    } else {
+        Write-Warn "跳过驱动安装，VPN 可能无法正常运行"
+        Write-Host "稍后可手动运行本脚本重新安装，或下载: https://build.openvpn.net/downloads/releases/latest-tap-windows-x64.exe" -ForegroundColor Cyan
+    }
+} else {
+    Write-Info "检测到 TAP 驱动已安装"
+}
+Write-Host ""
 
 if (-not $Version) {
     try {
@@ -29,7 +131,18 @@ if (-not $Version) {
 if ($Version -notmatch "^v") { $Version = "v$Version" }
 
 $Base = "$RepoRaw/$Version/client"
-$Files = @("one_client.exe", "client.yaml", "VERSION", "README.md")
+
+# 根据系统架构选择对应的客户端文件
+$arch = Get-SystemArchitecture
+if ($arch -eq "x64") {
+    $clientExe = "one_client-amd64.exe"
+    Write-Info "检测到 64位系统，将下载 64位客户端"
+} else {
+    $clientExe = "one_client-x86.exe"
+    Write-Info "检测到 32位系统，将下载 32位客户端"
+}
+
+$Files = @($clientExe, "client.yaml", "VERSION", "README.md")
 
 if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null }
 Set-Location $InstallDir
@@ -56,9 +169,16 @@ foreach ($f in $Files) {
         Write-Info "  跳过 client.yaml（保留现有配置）"
         continue
     }
+
+    # 对于客户端 exe，下载后重命名为 one_client.exe
+    $outputFile = $f
+    if ($f -match "one_client-(amd64|x86)\.exe") {
+        $outputFile = "one_client.exe"
+    }
+
     Write-Info "  下载 $f"
     try {
-        Invoke-WebRequest -Uri "$Base/$f" -OutFile $f -UseBasicParsing
+        Invoke-WebRequest -Uri "$Base/$f" -OutFile $outputFile -UseBasicParsing
     } catch {
         Write-Err "下载 $f 失败: $_"
         exit 1
