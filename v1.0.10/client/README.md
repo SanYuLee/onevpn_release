@@ -11,6 +11,7 @@ irm https://raw.githubusercontent.com/SanYuLee/onevpn_release/main/install.ps1 |
 ```
 
 脚本会下载到 `%USERPROFILE%\onevpn-client` 并创建桌面快捷方式。
+客户端启动时会自动检测并安装 TAP-Windows 驱动（需管理员权限），驱动文件已随脚本下载到安装目录的 `tap/` 下。
 
 ## 手动使用
 

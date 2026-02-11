@@ -12,16 +12,10 @@ param(
 $ErrorActionPreference = "Stop"
 $RepoRaw = "https://raw.githubusercontent.com/SanYuLee/onevpn_release/main"
 
-# 检测管理员权限
+# 检测管理员权限（仅用于提示；驱动安装由客户端启动时处理）
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
-    Write-Err "此脚本需要管理员权限才能运行"
-    Write-Host ""
-    Write-Host "请以管理员身份重新运行此脚本：" -ForegroundColor Yellow
-    Write-Host "  1. 右键点击 PowerShell → 以管理员身份运行" -ForegroundColor Cyan
-    Write-Host "  2. 或在 PowerShell 中运行: Start-Process powershell -Verb RunAs -ArgumentList '-File', '$PSCommandPath'" -ForegroundColor Cyan
-    Write-Host ""
-    exit 1
+    Write-Warn "当前未以管理员权限运行。稍后启动客户端安装驱动时会触发 UAC 提示。"
 }
 
 function Write-Info { param($m) Write-Host "[INFO] $m" -ForegroundColor Green }
@@ -31,27 +25,6 @@ function Write-Warn { param($m) Write-Host "[WARN] $m" -ForegroundColor Yellow }
 # 使用 TLS 1.2
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# 检测 TAP 驱动是否已安装
-function Test-TAPDriver {
-    # 方法1：检查驱动存储中是否存在 TAP 驱动
-    try {
-        $driverPackages = pnputil /enum-drivers | Out-String
-        if ($driverPackages -match "tap0901" -or $driverPackages -match "TAP-Windows") {
-            return $true
-        }
-    } catch {}
-
-    # 方法2：检查网络适配器
-    try {
-        $adapter = Get-NetAdapter | Where-Object { $_.Name -like "*TAP*" -or $_.InterfaceDescription -like "*TAP*" }
-        if ($null -ne $adapter) {
-            return $true
-        }
-    } catch {}
-
-    return $false
-}
-
 # 获取系统架构（32位或64位）
 function Get-SystemArchitecture {
     if ([Environment]::Is64BitOperatingSystem) {
@@ -60,41 +33,6 @@ function Get-SystemArchitecture {
         return "x86"
     }
 }
-
-# 获取 Windows 版本信息
-function Get-WindowsVersion {
-    $os = Get-WmiObject -Class Win32_OperatingSystem
-    $version = [version]$os.Version
-    return $version
-}
-
-# 检测是否需要安装 TAP 驱动
-$needTapDriver = -not (Test-TAPDriver)
-if ($needTapDriver) {
-    Write-Host ""
-    Write-Warn "未检测到 TAP-Windows 驱动"
-
-    # 检查是否为自动安装模式（通过环境变量）
-    $autoInstall = $false
-    if ($env:AutoInstallTap -eq "1") {
-        $autoInstall = $true
-    } elseif ([Environment]::UserInteractive) {
-        # 交互模式下询问用户
-        $response = Read-Host "是否自动下载并安装 TAP 驱动？(Y/n)"
-        if ($response -eq "" -or $response -match '^[yY]') {
-            $autoInstall = $true
-        }
-    }
-
-    if (-not $autoInstall) {
-        Write-Warn "跳过驱动安装，VPN 可能无法正常运行"
-        $needTapDriver = $false
-    }
-} else {
-    Write-Host ""
-    Write-Info "检测到 TAP 驱动已安装"
-}
-Write-Host ""
 
 if (-not $Version) {
     try {
@@ -110,7 +48,6 @@ $Base = "$RepoRaw/$Version/client"
 
 # 根据系统架构选择对应的客户端文件
 $arch = Get-SystemArchitecture
-$winVersion = Get-WindowsVersion
 
 if ($arch -eq "x64") {
     $clientExe = "one_client-amd64.exe"
@@ -122,39 +59,39 @@ if ($arch -eq "x64") {
 
 # 基础下载文件列表
 $Files = @($clientExe, "client.yaml", "VERSION", "README.md")
-
-# 如果需要安装驱动，添加驱动文件到下载列表
-$tapFiles = @()
-if ($needTapDriver) {
-    # 根据 Windows 版本和架构选择驱动文件
-    if ($winVersion.Major -ge 10) {
-        $tapDir = "win10"
-        Write-Info "将下载 Windows 10+ 驱动"
-    } else {
-        $tapDir = "win7"
-        Write-Info "将下载 Windows 7/8 驱动"
-    }
-
-    if ($arch -eq "x64") {
-        $tapArchDir = "amd64"
-    } else {
-        $tapArchDir = "i386"
-    }
-
-    # 添加驱动文件到下载列表（从固定的 tap 目录下载）
-    $tapBase = "$RepoRaw/tap/$tapDir/$tapArchDir"
-    $tapFiles = @(
-        "OemVista.inf",
-        "tap0901.cat",
-        "tap0901.sys"
-    )
-
-    # 记录驱动下载路径
-    $tapRemoteBase = $tapBase
-}
+# 驱动文件（全量下载，客户端启动时自动选择并安装）
+$DriverFiles = @(
+    "tap/README.md",
+    "tap/win10/include/tap-windows.h",
+    "tap/win10/amd64/OemVista.inf",
+    "tap/win10/amd64/tap0901.cat",
+    "tap/win10/amd64/tap0901.sys",
+    "tap/win10/amd64/devcon.exe",
+    "tap/win10/i386/OemVista.inf",
+    "tap/win10/i386/tap0901.cat",
+    "tap/win10/i386/tap0901.sys",
+    "tap/win10/i386/devcon.exe",
+    "tap/win10/arm64/OemVista.inf",
+    "tap/win10/arm64/tap0901.cat",
+    "tap/win10/arm64/tap0901.sys",
+    "tap/win10/arm64/devcon.exe",
+    "tap/win7/include/tap-windows.h",
+    "tap/win7/amd64/OemVista.inf",
+    "tap/win7/amd64/tap0901.cat",
+    "tap/win7/amd64/tap0901.sys",
+    "tap/win7/amd64/tapinstall.exe",
+    "tap/win7/i386/OemVista.inf",
+    "tap/win7/i386/tap0901.cat",
+    "tap/win7/i386/tap0901.sys",
+    "tap/win7/i386/tapinstall.exe",
+    "tap/win7/arm64/OemVista.inf",
+    "tap/win7/arm64/tap0901.cat",
+    "tap/win7/arm64/tap0901.sys",
+    "tap/win7/arm64/tapinstall.exe"
+)
 
 # 合并所有下载文件
-$allFiles = $Files + $tapFiles
+$allFiles = $Files + $DriverFiles
 
 if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null }
 Set-Location $InstallDir
@@ -183,10 +120,7 @@ if (Test-Path $tempDir) {
 New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 
 # 第一阶段：下载所有文件
-$downloadFiles = $Files
-if ($needTapDriver) {
-    $downloadFiles = $allFiles
-}
+$downloadFiles = $allFiles
 
 foreach ($f in $downloadFiles) {
     if ($f -eq "client.yaml" -and $SkipClientYaml) {
@@ -201,12 +135,15 @@ foreach ($f in $downloadFiles) {
     }
 
     # 判断文件来源（客户端文件 vs 驱动文件）
-    if ($tapFiles -contains $f) {
-        $fileUrl = "$tapRemoteBase/$f"
-        $destPath = Join-Path $tempDir $f
+    if ($f -like "tap/*") {
+        $fileUrl = "$RepoRaw/$f"
     } else {
         $fileUrl = "$Base/$f"
-        $destPath = Join-Path $tempDir $f
+    }
+    $destPath = Join-Path $tempDir $f
+    $destDir = Split-Path $destPath -Parent
+    if (-not (Test-Path $destDir)) {
+        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
     }
 
     Write-Info "  下载 $f"
@@ -220,134 +157,22 @@ foreach ($f in $downloadFiles) {
 
 Write-Info "所有文件下载完成"
 
-# 第二阶段：复制驱动文件到安装目录（如果需要）
-if ($needTapDriver) {
-    Write-Host ""
-    Write-Info "正在复制驱动文件..."
-
-    $tapDestDir = Join-Path $InstallDir "tap"
-    if (-not (Test-Path $tapDestDir)) {
-        New-Item -ItemType Directory -Path $tapDestDir -Force | Out-Null
+# 第二阶段：复制驱动文件到安装目录
+Write-Host ""
+Write-Info "正在复制驱动文件..."
+foreach ($f in $DriverFiles) {
+    $srcFile = Join-Path $tempDir $f
+    $destFile = Join-Path $InstallDir $f
+    $destDir = Split-Path $destFile -Parent
+    if (-not (Test-Path $destDir)) {
+        New-Item -ItemType Directory -Path $destDir -Force | Out-Null
     }
-
-    foreach ($f in $tapFiles) {
-        $srcFile = Join-Path $tempDir $f
-        $destFile = Join-Path $tapDestDir $f
-        Copy-Item -Path $srcFile -Destination $destFile -Force
-        Write-Info "  已安装驱动文件: $f"
-    }
+    Copy-Item -Path $srcFile -Destination $destFile -Force
+    Write-Info "  已复制: $f"
 }
+Write-Info "驱动文件已准备完成，客户端启动时会自动检测并安装"
 
-# 第三阶段：安装驱动（如果需要）
-$driverInstalled = $false
-if ($needTapDriver) {
-    Write-Host ""
-    Write-Info "正在安装 TAP 驱动..."
-
-    $infFile = Join-Path $InstallDir "tap\OemVista.inf"
-    if (-not (Test-Path $infFile)) {
-        Write-Warn "驱动文件未找到，跳过安装"
-    } else {
-        try {
-            Write-Warn "此过程可能需要 10-30 秒，请稍候..."
-
-            # 尝试安装驱动（先尝试正常安装，失败则尝试强制安装）
-            $exitCode = 0
-            try {
-                $process = Start-Process -FilePath "pnputil.exe" -ArgumentList "/add-driver", "`"$infFile`"", "/install", "/noreboot" -Wait -PassThru -WindowStyle Hidden
-                $exitCode = $process.ExitCode
-            } catch {
-                $exitCode = -1
-            }
-
-            # 如果安装失败，尝试强制安装
-            if ($exitCode -ne 0 -and $exitCode -ne 3010) {
-                Write-Info "尝试强制安装驱动..."
-                try {
-                    $process = Start-Process -FilePath "pnputil.exe" -ArgumentList "/add-driver", "`"$infFile`"", "/install", "/noreboot", "/force" -Wait -PassThru -WindowStyle Hidden
-                    $exitCode = $process.ExitCode
-                } catch {
-                    $exitCode = -1
-                }
-            }
-
-            # 检查安装结果
-            if ($exitCode -eq 0) {
-                Write-Info "TAP 驱动安装成功！"
-                $driverInstalled = $true
-            } elseif ($exitCode -eq 3010) {
-                Write-Info "TAP 驱动安装成功，但需要重启计算机才能生效"
-                Write-Warn "请重启计算机后再次运行 OneVPN 客户端"
-                $driverInstalled = $true
-            } elseif ($exitCode -eq -1797) {
-                # 错误码 -1797 (0xFFFFF909) 表示驱动未签名
-                Write-Warn "驱动未签名或系统禁止安装未签名驱动"
-                Write-Host "已下载客户端和驱动文件，但驱动安装失败，请手动安装" -ForegroundColor Yellow
-                Write-Host "驱动文件位置: $infFile" -ForegroundColor Cyan
-                Write-Host "提示：可以尝试以下方法安装：" -ForegroundColor Cyan
-                Write-Host "  1. 临时禁用驱动签名强制：bcdedit /set testsigning on（需要重启）" -ForegroundColor Cyan
-                Write-Host "  2. 右键 OemVista.inf → 安装" -ForegroundColor Cyan
-            } elseif ($exitCode -eq -1073700886) {
-                # 错误码 -1073700886 (0xC000007A) 表示系统资源不足
-                Write-Warn "系统资源不足，无法安装驱动"
-                Write-Host "已下载客户端和驱动文件，但驱动安装失败，请手动安装" -ForegroundColor Yellow
-                Write-Host "驱动文件位置: $infFile" -ForegroundColor Cyan
-            } elseif ($exitCode -eq 1) {
-                # 退出码1通常表示驱动已存在或需要重启，检查驱动是否真的已安装
-                if (Test-TAPDriver) {
-                    Write-Info "TAP 驱动已安装"
-                    $driverInstalled = $true
-                } else {
-                    # 驱动可能已添加到驱动存储但未安装，尝试安装
-                    Write-Info "驱动已添加到驱动存储，尝试安装..."
-                    try {
-                        $process = Start-Process -FilePath "pnputil.exe" -ArgumentList "/add-driver", "`"$infFile`"", "/install", "/force" -Wait -PassThru -WindowStyle Hidden
-                        if (Test-TAPDriver) {
-                            Write-Info "TAP 驱动安装成功"
-                            $driverInstalled = $true
-                        } else {
-                            Write-Warn "TAP 驱动可能需要重启后才能生效"
-                            $driverInstalled = $true  # 认为安装成功
-                        }
-                    } catch {
-                        Write-Warn "TAP 驱动安装失败"
-                        Write-Host "已下载客户端和驱动文件，但驱动安装失败，请手动安装" -ForegroundColor Yellow
-                        Write-Host "驱动文件位置: $infFile" -ForegroundColor Cyan
-                    }
-                }
-            } else {
-                # 其他错误
-                if (Test-TAPDriver) {
-                    Write-Info "TAP 驱动已存在于系统中"
-                    $driverInstalled = $true
-                } else {
-                    Write-Warn "TAP 驱动安装失败，退出码: $exitCode"
-                    Write-Host "已下载客户端和驱动文件，但驱动安装失败，请手动安装" -ForegroundColor Yellow
-                    Write-Host "驱动文件位置: $infFile" -ForegroundColor Cyan
-                    Write-Host "尝试手动安装命令：" -ForegroundColor Cyan
-                    Write-Host "  pnputil /add-driver `"$infFile`" /install" -ForegroundColor White
-                }
-            }
-
-            # 等待驱动加载
-            Start-Sleep -Seconds 3
-
-            if ($driverInstalled) {
-                if (Test-TAPDriver) {
-                    Write-Info "TAP 驱动检测成功！"
-                } else {
-                    Write-Warn "TAP 驱动可能未正确安装，建议重启计算机"
-                }
-            }
-        } catch {
-            Write-Warn "TAP 驱动安装失败: $_"
-            Write-Host "已下载客户端和驱动文件，但驱动安装失败，请手动安装" -ForegroundColor Yellow
-            Write-Host "驱动文件位置: $infFile" -ForegroundColor Cyan
-        }
-    }
-}
-
-# 第四阶段：复制客户端文件到安装目录
+# 第三阶段：复制客户端文件到安装目录
 Write-Host ""
 Write-Info "正在复制文件到安装目录..."
 
@@ -373,6 +198,8 @@ Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Info "客户端文件已安装到: $InstallDir"
 
+$ExePath = Join-Path $InstallDir "one_client.exe"
+
 # 创建桌面快捷方式，便于退出后再次启动
 $DesktopPath = [Environment]::GetFolderPath("Desktop")
 $ShortcutPath = Join-Path $DesktopPath "OneVPN 客户端.lnk"
@@ -393,25 +220,17 @@ try {
 }
 Write-Host ""
 
-$ExePath = Join-Path $InstallDir "one_client.exe"
-
-# 只有在驱动已安装成功或不需要安装驱动时才启动客户端
-if (-not $needTapDriver -or $driverInstalled) {
+Write-Host ""
+Write-Info "正在启动客户端（程序启动后会自动打开 Web 管理界面）..."
+try {
+    # 以管理员身份启动（若当前非管理员，UAC 会提示）
+    Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir -Verb RunAs -WindowStyle Hidden
     Write-Host ""
-    Write-Info "正在启动客户端（程序启动后会自动打开 Web 管理界面）..."
-    try {
-        # 以管理员身份启动（若当前非管理员，UAC 会提示）
-        Start-Process -FilePath $ExePath -WorkingDirectory $InstallDir -Verb RunAs -WindowStyle Hidden
-        Write-Host ""
-        Write-Host "已启动 OneVPN 客户端，浏览器将自动打开 Web 管理界面。" -ForegroundColor Green
-        Write-Host "请在页面中完成 server、password 等配置并保存，然后点击「启动服务」。" -ForegroundColor Cyan
-    } catch {
-        Write-Host "自动启动失败，请手动以管理员身份运行: $ExePath" -ForegroundColor Yellow
-        Write-Host "运行后程序会自动打开 http://127.0.0.1:8081 进行配置。" -ForegroundColor Cyan
-    }
-} else {
-    Write-Host ""
-    Write-Warn "驱动安装失败，未启动客户端"
-    Write-Host "请手动安装驱动或重启计算机后，运行: $ExePath" -ForegroundColor Yellow
+    Write-Host "已启动 OneVPN 客户端，浏览器将自动打开 Web 管理界面。" -ForegroundColor Green
+    Write-Host "客户端会在启动时自动检测并安装 TAP 驱动（若未安装）。" -ForegroundColor Cyan
+    Write-Host "请在页面中完成 server、password 等配置并保存，然后点击「启动服务」。" -ForegroundColor Cyan
+} catch {
+    Write-Host "自动启动失败，请手动以管理员身份运行: $ExePath" -ForegroundColor Yellow
+    Write-Host "运行后程序会自动打开 http://127.0.0.1:8081 进行配置。" -ForegroundColor Cyan
 }
 Write-Host ""

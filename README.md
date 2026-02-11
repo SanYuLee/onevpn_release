@@ -6,26 +6,19 @@
 
 ### Windows 直接部署客户端
 
-在 **Windows** 上打开 **PowerShell**（**必须右键"以管理员身份运行"**），执行一行：
+在 **Windows** 上打开 **PowerShell**（建议以管理员身份运行，或稍后启动客户端时会提示 UAC），执行一行：
 
 ```powershell
 irm https://raw.githubusercontent.com/SanYuLee/onevpn_release/main/install.ps1 | iex
 ```
 
-**注意**：脚本会检测管理员权限，如果不是管理员权限会自动退出并提示。
+**系统架构支持**：脚本会自动检测系统架构（32位或64位），下载对应的客户端程序。
+**驱动策略**：脚本会**全量下载**所有版本的 TAP-Windows 驱动文件到安装目录，客户端启动时会自动检测并安装合适版本（需管理员权限）。
 
-**系统架构支持**：脚本会自动检测系统架构（32位或64位）和 Windows 版本，自动选择对应的客户端和 TAP-Windows 驱动进行下载和安装。
-
-驱动文件与构建产物一起发布到 release 仓库，安装流程：
-1. 检测管理员权限（不是管理员则退出）
-2. 检测系统是否已安装 TAP 驱动
-3. 根据系统架构和 Windows 版本选择对应的驱动
-4. 下载客户端和驱动文件到临时目录
-5. 安装驱动（使用 pnputil 静默安装）
-6. 复制客户端和驱动文件到安装目录
-7. 只有驱动安装成功时才启动客户端
-
-**自动驱动安装**：脚本会自动检测系统是否已安装 TAP-Windows 驱动。如果未安装，会提示您自动下载并静默安装（无需任何额外操作，全程自动化）。
+安装流程：
+1. 下载客户端与完整驱动文件到临时目录
+2. 复制客户端与驱动文件到安装目录
+3. 启动客户端（会触发 UAC 提示以安装驱动）
 
 脚本会把最新版客户端（`one_client.exe`、`client.yaml` 等）下载到 `%USERPROFILE%\onevpn-client`，并创建桌面快捷方式。然后：
 
@@ -41,13 +34,7 @@ irm https://raw.githubusercontent.com/SanYuLee/onevpn_release/main/install.ps1 |
 .\install.ps1 -InstallDir "C:\onevpn-client" -Version "1.0.1"
 ```
 
-**完全自动安装（无交互模式）**：
-
-```powershell
-# 自动下载并安装驱动，跳过所有确认提示
-$env:AutoInstallTap = "1"
-irm https://raw.githubusercontent.com/SanYuLee/onevpn_release/main/install.ps1 | iex
-```
+（驱动安装由客户端启动时自动完成）
 
 ### Linux / macOS：服务端或客户端
 
