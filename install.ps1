@@ -67,45 +67,15 @@ if ($arch -eq "x64") {
 
 # 基础下载文件列表（配置 client.yaml 由程序首次运行自动生成，不再下载）
 $Files = @($clientExe, "VERSION", "README.md")
-# 驱动文件（全量下载，客户端启动时自动选择并安装）
-$DriverFiles = @(
-    "tap/README.md",
-    "tap/win10/include/tap-windows.h",
-    "tap/win10/amd64/OemVista.inf",
-    "tap/win10/amd64/tap0901.cat",
-    "tap/win10/amd64/tap0901.sys",
-    "tap/win10/amd64/devcon.exe",
-    "tap/win10/i386/OemVista.inf",
-    "tap/win10/i386/tap0901.cat",
-    "tap/win10/i386/tap0901.sys",
-    "tap/win10/i386/devcon.exe",
-    "tap/win10/arm64/OemVista.inf",
-    "tap/win10/arm64/tap0901.cat",
-    "tap/win10/arm64/tap0901.sys",
-    "tap/win10/arm64/devcon.exe",
-    "tap/win7/include/tap-windows.h",
-    "tap/win7/amd64/OemVista.inf",
-    "tap/win7/amd64/tap0901.cat",
-    "tap/win7/amd64/tap0901.sys",
-    "tap/win7/amd64/tapinstall.exe",
-    "tap/win7/i386/OemVista.inf",
-    "tap/win7/i386/tap0901.cat",
-    "tap/win7/i386/tap0901.sys",
-    "tap/win7/i386/tapinstall.exe",
-    "tap/win7/arm64/OemVista.inf",
-    "tap/win7/arm64/tap0901.cat",
-    "tap/win7/arm64/tap0901.sys",
-    "tap/win7/arm64/tapinstall.exe"
-)
-# wintun（WireGuard 模式）：按当前平台架构只下载本机所需的 wintun.dll（若本地已有且 MD5 一致会跳过）
+# wintun（WireGuard）：按当前平台架构只下载本机所需的 wintun.dll（若本地已有且 MD5 一致会跳过）
 $wintunArch = Get-WintunArch
 $WintunFiles = @("wintun/$wintunArch/wintun.dll")
 Write-Info "当前平台 wintun 架构: $wintunArch，将按需下载 wintun.dll"
 
 # 合并所有下载文件
-$allFiles = $Files + $DriverFiles + $WintunFiles
+$allFiles = $Files + $WintunFiles
 
-# 获取 checksums.txt（单文件含 server/client/tap 全部路径，用于增量更新）
+# 获取 checksums.txt（单文件含 server/client 路径，用于增量更新）
 $Checksums = @{}
 try {
     $cs = (Invoke-WebRequest -Uri "$RepoRaw/$Version/checksums.txt" -UseBasicParsing).Content
@@ -147,8 +117,8 @@ foreach ($f in $downloadFiles) {
         $outputFile = "one_client.exe"
     }
 
-    # MD5 未变化则跳过下载（客户端主文件与驱动均支持）
-    $checksumKey = if ($f -like "tap/*") { $f } elseif ($f -like "wintun/*") { "client/$f" } else { "client/$f" }
+    # MD5 未变化则跳过下载（客户端主文件与 wintun 均支持；wintun 的 checksum 键为 wintun/arch/wintun.dll）
+    $checksumKey = if ($f -like "wintun/*") { $f } else { "client/$f" }
     $localPath = Join-Path $InstallDir $outputFile
     if (-not (Need-Download -RemoteFile $checksumKey -LocalPath $localPath)) {
         Write-Info "  跳过 $f（MD5 未变化）"
@@ -159,14 +129,8 @@ foreach ($f in $downloadFiles) {
         continue
     }
 
-    # 判断文件来源（客户端文件 vs tap 根目录 vs client 下 wintun）
-    if ($f -like "tap/*") {
-        $fileUrl = "$RepoRaw/$f"
-    } elseif ($f -like "wintun/*") {
-        $fileUrl = "$Base/$f"
-    } else {
-        $fileUrl = "$Base/$f"
-    }
+    # 文件来源：wintun 从发布仓库根目录下载，其余从当前版本 client 目录下载
+    $fileUrl = if ($f -like "wintun/*") { "$RepoRaw/$f" } else { "$Base/$f" }
     $destPath = Join-Path $tempDir $f
     $destDir = Split-Path $destPath -Parent
     if (-not (Test-Path $destDir)) {
@@ -200,21 +164,9 @@ if (Test-Path $exePath) {
     }
 }
 
-# 第二阶段：复制驱动文件到安装目录（tap + wintun）
+# 第二阶段：复制 wintun 到安装目录
 Write-Host ""
-Write-Info "正在复制驱动文件..."
-foreach ($f in $DriverFiles) {
-    $srcFile = Join-Path $tempDir $f
-    if (Test-Path $srcFile) {
-        $destFile = Join-Path $InstallDir $f
-        $destDir = Split-Path $destFile -Parent
-        if (-not (Test-Path $destDir)) {
-            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
-        }
-        Copy-Item -Path $srcFile -Destination $destFile -Force
-        Write-Info "  已复制: $f"
-    }
-}
+Write-Info "正在复制 wintun 驱动..."
 foreach ($f in $WintunFiles) {
     $srcFile = Join-Path $tempDir $f
     if (Test-Path $srcFile) {
@@ -227,7 +179,7 @@ foreach ($f in $WintunFiles) {
         Write-Info "  已复制: $f"
     }
 }
-Write-Info "驱动文件已准备完成，客户端启动时会自动检测并安装 TAP 驱动，并放置 wintun.dll 供 WireGuard 模式使用"
+Write-Info "wintun 已准备完成，客户端启动时会自动放置 wintun.dll 供 WireGuard 使用"
 
 # 第三阶段：复制客户端文件到安装目录
 Write-Host ""
@@ -281,9 +233,8 @@ try {
     Write-Host ""
     Write-Host "已启动 OneVPN 客户端，浏览器将自动打开 Web 管理界面。" -ForegroundColor Green
     Write-Host "首次运行会在安装目录下自动生成 client.yaml，无需下载配置。" -ForegroundColor Cyan
-    Write-Host "客户端会在启动时自动检测并安装 TAP/Wintun 驱动（若未安装）。" -ForegroundColor Cyan
-    Write-Host "请在页面中完成配置并保存，然后点击「启动服务」。" -ForegroundColor Cyan
-    Write-Host "支持 mode: legacy（填写 server、password）或 mode: wireguard（填写 wg_private_key、wg_server_public_key、server）。" -ForegroundColor Gray
+    Write-Host "客户端会在启动时自动放置 wintun.dll（若缺失请从 wintun.net 下载）。" -ForegroundColor Cyan
+    Write-Host "请在页面中完成配置（wg_private_key、wg_server_public_key、server）并保存，然后点击「启动服务」。" -ForegroundColor Cyan
 } catch {
     Write-Host "自动启动失败，请手动以管理员身份运行: $ExePath" -ForegroundColor Yellow
     Write-Host "运行后程序会自动打开 http://127.0.0.1:8081 进行配置。" -ForegroundColor Cyan

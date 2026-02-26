@@ -13,14 +13,14 @@ irm https://raw.githubusercontent.com/SanYuLee/onevpn_release/main/install.ps1 |
 ```
 
 **系统架构支持**：脚本会自动检测系统架构（32位或64位），下载对应的客户端程序。
-**驱动策略**：脚本会下载 TAP-Windows 与 wintun（WireGuard）驱动到安装目录，客户端启动时会自动检测并安装合适版本（需管理员权限）。
+**驱动策略**：脚本会下载 wintun（WireGuard）到安装目录，客户端启动时会自动放置 wintun.dll 供隧道使用。
 
-**配置文件**：安装包不再包含 `client.yaml`。首次运行程序会在安装目录下自动生成 `client.yaml`，在 Web 界面中填写 **server**、**password**（legacy）或 **wg_private_key**、**wg_server_public_key**、**server**（WireGuard）后保存即可。
+**配置文件**：安装包不再包含 `client.yaml`。首次运行程序会在安装目录下自动生成 `client.yaml`，在 Web 界面中填写 **wg_private_key**、**wg_server_public_key**、**server** 后保存即可。
 
 安装流程：
-1. 下载客户端与驱动文件到临时目录
+1. 下载客户端与 wintun 到临时目录
 2. 复制到安装目录
-3. 启动客户端（会触发 UAC 提示以安装驱动；首次运行自动生成配置）
+3. 启动客户端（首次运行自动生成配置）
 
 脚本会把最新版客户端下载到 `%USERPROFILE%\onevpn-client`，并创建桌面快捷方式。然后：
 

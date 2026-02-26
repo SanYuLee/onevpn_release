@@ -134,7 +134,7 @@ if command -v df &>/dev/null; then
 fi
 
 BASE="$REPO_RAW/$VERSION"
-# 获取 checksums.txt（单文件含 server/client/tap 全部路径，用于增量更新）
+# 获取 checksums.txt（单文件含 server/client 路径，用于增量更新）
 declare -A CHECKSUMS
 if CHECKSUMS_RAW=$(fetch_stdout "$BASE/checksums.txt" 2>/dev/null); then
   while read -r hash _ fn; do
