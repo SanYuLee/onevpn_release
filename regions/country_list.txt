@@ -1,0 +1,12 @@
+# ISO 3166-1 alpha-2 country codes (one per line, lowercase).
+# Add or remove lines and re-run scripts/fetch-region-cidrs.sh to update CC.txt files.
+cn
+us
+jp
+gb
+hk
+tw
+kr
+de
+fr
+ru

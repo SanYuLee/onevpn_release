@@ -1,6 +1,6 @@
 # Region CIDR data (OneVPN Smart proxy)
 
-Per-country IPv4 CIDR lists for Smart proxy mode (allowlist/blocklist by region).
+Per-country IPv4 CIDR lists for Smart proxy mode: **use_vpn** (only selected regions use VPN) or **not_use_vpn** (selected regions go direct, others use VPN).
 
 ## Source
 
@@ -28,4 +28,4 @@ From the onevpn repo root, run:
 ./scripts/fetch-region-cidrs.sh
 ```
 
-This downloads the default country set into `data/regions/`. Edit `COUNTRY_LIST` in the script to add or remove countries. Build then copies `data/regions/` to the release repo; install scripts deploy it with the client.
+The script reads **`data/regions/country_list.txt`** (one ISO 3166-1 alpha-2 code per line, lowercase). Add or remove lines there and re-run the script to update `CC.txt` files. Build then copies `data/regions/` to the release repo; install scripts deploy it with the client.
