@@ -1,0 +1,11 @@
+c8be620f5b53a472ffd33b009ff49e19  client/README.md
+5b521bf8413a2b564a9f460ad50ff466  client/VERSION
+480f6e5eb2d72c5925196513e8e39066  client/one_client-amd64.exe
+6a00d592e0458e6dd3762e1b8e5d82e2  client/one_client-x86.exe
+480f6e5eb2d72c5925196513e8e39066  client/one_client.exe
+95f1e73263e5f86d246b10e85f9f6604  server/README.md
+5b521bf8413a2b564a9f460ad50ff466  server/VERSION
+adde05bcd63181ee49dbf7fc8b709ea6  server/one_server
+e861eb5789c50997d9476a6172d1c269  wintun/amd64/wintun.dll
+872fa5a20644b454af5582e36763a9b0  wintun/arm64/wintun.dll
+fa0391a861b949de22e0a59c6faeaed5  wintun/i386/wintun.dll
