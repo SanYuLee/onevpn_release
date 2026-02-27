@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# OneVPN 一键安装脚本（发布仓库）
-# 用法（任选其一）：
+# OneVPN one-line install script (release repo)
+# Usage (pick one):
 #   curl -sSL https://raw.githubusercontent.com/SanYuLee/onevpn_release/main/install.sh | sudo bash -s server
 #   curl -sSL https://raw.githubusercontent.com/SanYuLee/onevpn_release/main/install.sh | bash -s client
-# 可选参数：install.sh server [安装目录] [版本号]
-#           install.sh client [安装目录] [版本号]
-# 不指定版本号则自动使用仓库中的最新版本（LATEST 文件）。
+# Optional: install.sh server [install_dir] [version]
+#           install.sh client [install_dir] [version]
+# If version is omitted, the script uses the latest from the repo (LATEST file).
 
 set -e
 
@@ -19,13 +19,13 @@ info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 err()  { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# 检测下载工具
+# Detect download tool
 if command -v curl &>/dev/null; then
   fetch() {
     if ! curl -sSLf "$1" -o "$2"; then
       local code=$?
-      err "下载失败 (curl 退出码 $code)"
-      [[ $code -eq 23 ]] && err "常见原因：磁盘已满或目标目录无写权限。请检查: df -h $INSTALL_DIR && touch $INSTALL_DIR/.write_test && rm -f $INSTALL_DIR/.write_test"
+      err "Download failed (curl exit code $code)"
+      [[ $code -eq 23 ]] && err "Common causes: disk full or no write permission. Check: df -h $INSTALL_DIR && touch $INSTALL_DIR/.write_test && rm -f $INSTALL_DIR/.write_test"
       return 1
     fi
   }
@@ -33,17 +33,17 @@ if command -v curl &>/dev/null; then
 elif command -v wget &>/dev/null; then
   fetch() {
     if ! wget -q -O "$2" "$1"; then
-      err "下载失败。若为写入错误，请检查磁盘空间: df -h $INSTALL_DIR"
+      err "Download failed. If write error, check disk space: df -h $INSTALL_DIR"
       return 1
     fi
   }
   fetch_stdout() { wget -q -O - "$1"; }
 else
-  err "需要 curl 或 wget，请先安装。"
+  err "curl or wget is required. Please install one of them."
   exit 1
 fi
 
-# 计算本地文件 MD5（兼容 Linux/macOS，用于增量更新判断）
+# Compute local file MD5 (Linux/macOS compatible, for incremental update)
 local_md5() {
   local f="$1"
   if command -v md5sum &>/dev/null; then
@@ -55,8 +55,8 @@ local_md5() {
   fi
 }
 
-# 根据 checksums.txt 判断是否需要下载（MD5 未变化则跳过）
-# 用法: need_download "filename" "expected_md5" -> 返回 0 需下载，1 跳过
+# Decide if file needs download from checksums.txt (skip if MD5 unchanged)
+# Usage: need_download "filename" "expected_md5" -> return 0 need download, 1 skip
 need_download() {
   local f="$1" expected="$2" local_path="$INSTALL_DIR/$f"
   [[ -z "$expected" ]] && return 0
@@ -66,30 +66,30 @@ need_download() {
   [[ "$got" == "$expected" ]]
 }
 
-# 解析参数：server|client [安装目录] [版本号]
+# Parse args: server|client [install_dir] [version]
 MODE="${1:-}"
 INSTALL_DIR="${2:-}"
 VERSION_OVERRIDE="${3:-}"
 
 if [[ "$MODE" != "server" && "$MODE" != "client" ]]; then
-  echo "用法: $0 server [安装目录] [版本号]  # 安装服务端（Linux）"
-  echo "      $0 client [安装目录] [版本号]  # 安装客户端（Windows 用 exe，本脚本仅下载到目录）"
-  echo "示例: curl -sSL $REPO_RAW/install.sh | sudo bash -s server"
-  echo "      curl -sSL $REPO_RAW/install.sh | bash -s client"
+  echo "Usage: $0 server [install_dir] [version]  # Install server (Linux)"
+  echo "      $0 client [install_dir] [version]  # Install client (Windows exe; this script only downloads to dir)"
+  echo "Example: curl -sSL $REPO_RAW/install.sh | sudo bash -s server"
+  echo "         curl -sSL $REPO_RAW/install.sh | bash -s client"
   exit 1
 fi
 
-# 解析版本号
+# Resolve version
 if [[ -n "$VERSION_OVERRIDE" ]]; then
   VERSION="$VERSION_OVERRIDE"
   if [[ "$VERSION" =~ ^v ]]; then true; else VERSION="v$VERSION"; fi
 else
   VERSION=$(fetch_stdout "$REPO_RAW/LATEST" | tr -d ' \r\n')
-  [[ -z "$VERSION" ]] && { err "无法获取最新版本号（LATEST）。"; exit 1; }
+  [[ -z "$VERSION" ]] && { err "Could not get latest version (LATEST)."; exit 1; }
   [[ "$VERSION" =~ ^v ]] || VERSION="v$VERSION"
 fi
 
-# 默认安装目录
+# Default install directory
 if [[ -z "$INSTALL_DIR" ]]; then
   if [[ "$MODE" == "server" ]]; then
     INSTALL_DIR="/opt/onevpn"
@@ -98,10 +98,10 @@ if [[ -z "$INSTALL_DIR" ]]; then
   fi
 fi
 
-# 服务端：通常需要 root
+# Server usually needs root
 if [[ "$MODE" == "server" ]]; then
   if [[ $(id -u) -ne 0 ]]; then
-    err "安装服务端需要 root 权限，请使用: sudo bash -s server [目录]"
+    err "Installing server requires root. Use: sudo bash -s server [dir]"
     exit 1
   fi
 fi
@@ -109,32 +109,32 @@ fi
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
-# 服务端：安装前先停止旧服务/进程，避免占用二进制导致无法覆盖
+# Server: stop existing service/process before install so binary can be overwritten
 if [[ "$MODE" == "server" ]]; then
   if command -v systemctl &>/dev/null && systemctl stop onevpn-server 2>/dev/null; then
-    info "已停止运行中的 onevpn-server 服务"
+    info "Stopped running onevpn-server service"
   fi
   if pkill -x one_server 2>/dev/null; then
-    info "已停止运行中的 one_server 进程"
+    info "Stopped running one_server process"
   fi
 fi
 
-# 安装前检查：目标可写且磁盘空间充足（约 50MB）
+# Pre-install check: target is writable and has enough space (~50MB)
 if ! touch "$INSTALL_DIR/.write_test" 2>/dev/null; then
-  err "无法写入 $INSTALL_DIR，请检查权限或换一个安装目录。"
+  err "Cannot write to $INSTALL_DIR. Check permissions or choose another install directory."
   exit 1
 fi
 rm -f "$INSTALL_DIR/.write_test"
 if command -v df &>/dev/null; then
   avail=$(df -k "$INSTALL_DIR" 2>/dev/null | awk 'NR==2 {print $4}')
   if [[ -n "$avail" && "$avail" -lt 51200 ]]; then
-    err "磁盘空间不足（需要约 50MB），当前可用约 $((avail/1024))MB。请清理后重试。"
+    err "Insufficient disk space (need ~50MB). Available: about $((avail/1024))MB. Free space and retry."
     exit 1
   fi
 fi
 
 BASE="$REPO_RAW/$VERSION"
-# 获取 checksums.txt（单文件含 server/client 路径，用于增量更新）
+# Fetch checksums.txt (single file with server/client paths for incremental update)
 declare -A CHECKSUMS
 if CHECKSUMS_RAW=$(fetch_stdout "$BASE/checksums.txt" 2>/dev/null); then
   while read -r hash _ fn; do
@@ -143,19 +143,19 @@ if CHECKSUMS_RAW=$(fetch_stdout "$BASE/checksums.txt" 2>/dev/null); then
 fi
 
 if [[ "$MODE" == "server" ]]; then
-  info "正在安装 OneVPN 服务端 $VERSION 到 $INSTALL_DIR ..."
+  info "Installing OneVPN server $VERSION to $INSTALL_DIR ..."
   for f in one_server VERSION README.md; do
     if ! need_download "$f" "${CHECKSUMS[server/$f]:-}"; then
-      info "  跳过 $f（MD5 未变化）"
+      info "  Skip $f (MD5 unchanged)"
       continue
     fi
-    info "  下载 $f"
-    fetch "$BASE/server/$f" "$f" || { err "下载 $f 失败"; exit 1; }
+    info "  Downloading $f"
+    fetch "$BASE/server/$f" "$f" || { err "Download $f failed"; exit 1; }
   done
   chmod +x one_server
-  info "✓ 服务端文件已安装到 $INSTALL_DIR"
+  info "✓ Server files installed to $INSTALL_DIR"
 
-  # 安装 systemd 单元（可选，可通过 SKIP_SYSTEMD=1 跳过）
+  # Install systemd unit (optional; set SKIP_SYSTEMD=1 to skip)
   if [[ -z "${SKIP_SYSTEMD:-}" ]]; then
     SYSTEMD_UNIT="/etc/systemd/system/onevpn-server.service"
     cat > "$SYSTEMD_UNIT" << EOF
@@ -174,41 +174,41 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
-    info "已安装 systemd 单元: $SYSTEMD_UNIT"
-    # 安装后自动启动服务
+    info "Installed systemd unit: $SYSTEMD_UNIT"
+    # Auto-start service after install
     if systemctl start onevpn-server 2>/dev/null; then
-      info "已自动启动 onevpn-server"
+      info "Started onevpn-server"
     fi
   fi
 
-  # 可选：检测 WireGuard 内核模块（WireGuard 模式需要）
+  # Optional: check WireGuard kernel module (needed for mode: wireguard)
   if ! (ip link add dev wg0 type wireguard 2>/dev/null; ip link del dev wg0 2>/dev/null); then
-    info "提示：未检测到 WireGuard 内核支持；若使用 mode: wireguard 请先安装 wireguard 模块（如 apt install wireguard）。"
+    info "Note: WireGuard kernel support not detected. For mode: wireguard install the wireguard module (e.g. apt install wireguard)."
   fi
   echo ""
-  echo "下一步："
-  echo "  - 服务已启动，提供 Web 管理界面（若已配置 web_listen / web_admin_pass）。"
-  echo "  - 在 server.yaml 中可设置 mode: legacy（默认）或 mode: wireguard；WireGuard 模式需配置 wg_private_key、wg_tunnel_addr、wg_peers。"
-  echo "  - 若未配置 VPN 参数（addr / password 或 WireGuard 相关项），VPN 服务不会自动启动；可在 Web 页面完成配置后点击「启动 VPN 服务」。"
-  echo "  - 首次运行程序会在安装目录下自动生成 server.yaml，无需下载配置。"
-  echo "  - 管理: sudo systemctl start|stop|restart onevpn-server   # 开机自启: sudo systemctl enable onevpn-server"
+  echo "Next steps:"
+  echo "  - Service is running; Web UI is available if web_listen / web_admin_pass are set."
+  echo "  - In server.yaml you can set mode: legacy (default) or mode: wireguard; wireguard needs wg_private_key, wg_tunnel_addr, wg_peers."
+  echo "  - If VPN params are not set (addr/password or WireGuard fields), VPN will not start; configure in Web UI then click Start VPN."
+  echo "  - First run creates server.yaml in the install directory; no config download needed."
+  echo "  - Manage: sudo systemctl start|stop|restart onevpn-server   # Start on boot: sudo systemctl enable onevpn-server"
   echo ""
 else
-  info "正在安装 OneVPN 客户端 $VERSION 到 $INSTALL_DIR ..."
+  info "Installing OneVPN client $VERSION to $INSTALL_DIR ..."
   for f in one_client.exe VERSION README.md; do
     if ! need_download "$f" "${CHECKSUMS[client/$f]:-}"; then
-      info "  跳过 $f（MD5 未变化）"
+      info "  Skip $f (MD5 unchanged)"
       continue
     fi
-    info "  下载 $f"
-    fetch "$BASE/client/$f" "$f" || { err "下载 $f 失败"; exit 1; }
+    info "  Downloading $f"
+    fetch "$BASE/client/$f" "$f" || { err "Download $f failed"; exit 1; }
   done
-  info "✓ 客户端文件已安装到 $INSTALL_DIR"
+  info "✓ Client files installed to $INSTALL_DIR"
   echo ""
-  echo "说明：one_client.exe 为 Windows 客户端（支持 mode: legacy 或 mode: wireguard）。"
-  echo "  - 首次运行程序会在安装目录下自动生成 client.yaml，无需下载配置。"
-  echo "  - 在 Windows 上：将本目录中文件复制到 Windows，以管理员身份运行 one_client.exe。"
-  echo "  - Legacy 模式：在 Web 配置中设置 server 与 password。"
-  echo "  - WireGuard 模式：在 Web 配置中设置 wg_private_key、wg_server_public_key、server（端点）。"
+  echo "Note: one_client.exe is the Windows client (supports mode: legacy or mode: wireguard)."
+  echo "  - First run creates client.yaml in the install directory; no config download needed."
+  echo "  - On Windows: copy files from this directory and run one_client.exe as Administrator."
+  echo "  - Legacy mode: set server and password in Web config."
+  echo "  - WireGuard mode: set wg_private_key, wg_server_public_key, server (endpoint) in Web config."
   echo ""
 fi
