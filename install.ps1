@@ -72,10 +72,7 @@ $wintunArch = Get-WintunArch
 $WintunFiles = @("wintun/$wintunArch/wintun.dll")
 Write-Info "Platform wintun arch: $wintunArch, will download wintun.dll as needed"
 
-# All files to download
-$allFiles = $Files + $WintunFiles
-
-# Fetch checksums.txt (single file with server/client paths for incremental update)
+# Fetch checksums first so we can get region list
 $Checksums = @{}
 try {
     $cs = (Invoke-WebRequest -Uri "$RepoRaw/$Version/checksums.txt" -UseBasicParsing).Content
@@ -85,6 +82,10 @@ try {
         }
     }
 } catch { }
+
+$RegionFiles = @($Checksums.Keys | Where-Object { $_ -like "regions/*" })
+# All files to download
+$allFiles = $Files + $WintunFiles + $RegionFiles
 
 # Whether local file needs download (skip if MD5 unchanged)
 function Need-Download {
@@ -117,9 +118,9 @@ foreach ($f in $downloadFiles) {
         $outputFile = "one_client.exe"
     }
 
-    # Skip if MD5 unchanged (client and wintun; wintun key is wintun/arch/wintun.dll)
-    $checksumKey = if ($f -like "wintun/*") { $f } else { "client/$f" }
-    $localPath = Join-Path $InstallDir $outputFile
+    # Skip if MD5 unchanged (client, wintun, regions)
+    $checksumKey = if ($f -like "wintun/*") { $f } elseif ($f -like "regions/*") { $f } else { "client/$f" }
+    $localPath = if ($f -like "regions/*") { Join-Path $InstallDir $f } else { Join-Path $InstallDir $outputFile }
     if (-not (Need-Download -RemoteFile $checksumKey -LocalPath $localPath)) {
         Write-Info "  Skip $f (MD5 unchanged)"
         $destPath = Join-Path $tempDir $f
@@ -129,8 +130,8 @@ foreach ($f in $downloadFiles) {
         continue
     }
 
-    # URL: wintun from repo root, rest from version client dir
-    $fileUrl = if ($f -like "wintun/*") { "$RepoRaw/$f" } else { "$Base/$f" }
+    # URL: wintun and regions from repo root, rest from version client dir
+    $fileUrl = if ($f -like "wintun/*" -or $f -like "regions/*") { "$RepoRaw/$f" } else { "$Base/$f" }
     $destPath = Join-Path $tempDir $f
     $destDir = Split-Path $destPath -Parent
     if (-not (Test-Path $destDir)) {
@@ -143,6 +144,8 @@ foreach ($f in $downloadFiles) {
     } catch {
         if ($f -like "wintun/*") {
             Write-Warn "  Skip $f (not in release or download failed); WireGuard needs wintun.dll, see wintun/README.md or run fetch-wintun.sh and rebuild"
+        } elseif ($f -like "regions/*") {
+            Write-Warn "  Skip $f (not in release or download failed); Smart proxy needs regions data"
         } else {
             Write-Err "Download $f failed: $_"
             exit 1
@@ -164,7 +167,7 @@ if (Test-Path $exePath) {
     }
 }
 
-# Phase 2: copy wintun to install dir
+# Phase 2: copy wintun and regions to install dir
 Write-Host ""
 Write-Info "Copying wintun driver..."
 foreach ($f in $WintunFiles) {
@@ -180,6 +183,20 @@ foreach ($f in $WintunFiles) {
     }
 }
 Write-Info "wintun ready; client will place wintun.dll on startup for WireGuard"
+
+Write-Info "Copying region CIDR data..."
+foreach ($f in $RegionFiles) {
+    $srcFile = Join-Path $tempDir $f
+    if (Test-Path $srcFile) {
+        $destFile = Join-Path $InstallDir $f
+        $destDir = Split-Path $destFile -Parent
+        if (-not (Test-Path $destDir)) {
+            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
+        }
+        Copy-Item -Path $srcFile -Destination $destFile -Force
+        Write-Info "  Copied: $f"
+    }
+}
 
 # Phase 3: copy client files to install dir
 Write-Host ""

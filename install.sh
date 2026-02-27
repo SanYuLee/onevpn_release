@@ -203,12 +203,23 @@ else
     info "  Downloading $f"
     fetch "$BASE/client/$f" "$f" || { err "Download $f failed"; exit 1; }
   done
+  mkdir -p "$INSTALL_DIR/regions"
+  for key in "${!CHECKSUMS[@]}"; do
+    if [[ "$key" == regions/* ]]; then
+      if ! need_download "$key" "${CHECKSUMS[$key]:-}"; then
+        info "  Skip $key (MD5 unchanged)"
+        continue
+      fi
+      info "  Downloading $key"
+      fetch "$REPO_RAW/$key" "$INSTALL_DIR/$key" || { err "Download $key failed"; exit 1; }
+    fi
+  done
   info "✓ Client files installed to $INSTALL_DIR"
   echo ""
   echo "Note: one_client.exe is the Windows client (supports mode: legacy or mode: wireguard)."
   echo "  - First run creates client.yaml in the install directory; no config download needed."
   echo "  - On Windows: copy files from this directory and run one_client.exe as Administrator."
-  echo "  - Legacy mode: set server and password in Web config."
+  echo "  - Proxy: set proxy_mode (global/smart) and smart_regions in Config for region-based routing."
   echo "  - WireGuard mode: set wg_private_key, wg_server_public_key, server (endpoint) in Web config."
   echo ""
 fi
